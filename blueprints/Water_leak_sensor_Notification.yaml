@@ -14,12 +14,30 @@ blueprint:
 
     alarm_devices:
       name: Alarm-capable devices
-      description: Devices that *can* receive alarm-style notifications (e.g. Pixel 8)
+      description: Devices that can receive alarm-style notifications (e.g. Pixel 8)
       default: []
       selector:
         device:
           integration: mobile_app
           multiple: true
+
+    alarm_on_detected:
+      name: "ALARM: Leak detected"
+      default: true
+      selector:
+        boolean: {}
+
+    alarm_on_cleared:
+      name: "ALARM: Leak cleared"
+      default: false
+      selector:
+        boolean: {}
+
+    alarm_on_offline:
+      name: "ALARM: Sensor offline"
+      default: false
+      selector:
+        boolean: {}
 
     normal_devices:
       name: Normal push devices
@@ -29,24 +47,6 @@ blueprint:
         device:
           integration: mobile_app
           multiple: true
-
-    alarm_on_detected:
-      name: Alarm on leak detected
-      default: true
-      selector:
-        boolean: {}
-
-    alarm_on_cleared:
-      name: Alarm on leak cleared
-      default: false
-      selector:
-        boolean: {}
-
-    alarm_on_offline:
-      name: Alarm on sensor offline
-      default: false
-      selector:
-        boolean: {}
 
     ha_notification_id:
       name: HA notification_id
