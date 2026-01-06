@@ -1,24 +1,24 @@
 blueprint:
-  name: Water leak → Phone notification (device picker)
-  description: Send mobile notifications to selected devices when a moisture sensor detects a leak. Uses notify.notify targets (no service-name pasting).
+  name: Water leak → Phone notification (device notify action)
+  description: Sends notifications to selected Mobile App devices when a moisture sensor detects water. No manual notify service names required.
   domain: automation
 
   input:
     water_sensors:
       name: Water leak sensors
-      description: Select one or more moisture sensors (water leak detectors)
       selector:
         entity:
           multiple: true
           filter:
             - device_class: moisture
 
-    notify_targets:
+    notify_devices:
       name: Devices to notify
-      description: Select the phones/tablets to notify (Mobile App devices)
+      description: Phones/tablets from the Mobile App integration
       selector:
-        target:
-          device: {}
+        device:
+          integration: mobile_app
+          multiple: true
 
     send_cleared:
       name: Notify when cleared (sensor OFF)
@@ -56,39 +56,44 @@ action:
                  and trigger.from_state.state == 'off'
                  and trigger.to_state.state == 'on' }}
         sequence:
-          - service: notify.notify
-            target: !input notify_targets
-            data:
-              title: "Water leak detected!"
-              message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
-              data:
-                tag: "water-leak-{{ ent | slugify }}"
-                notification_icon: "mdi:home-flood"
-                color: "red"
-                ttl: 0
-                priority: high
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - device_id: "{{ repeat.item }}"
+                  domain: mobile_app
+                  type: notify
+                  title: "Water leak detected!"
+                  message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
+                  data:
+                    tag: "water-leak-{{ ent | slugify }}"
+                    notification_icon: "mdi:home-flood"
+                    color: "red"
+                    ttl: 0
+                    priority: high
 
-      # Leak cleared: on -> off (optional)
+      # Leak cleared: on -> off
       - conditions:
           - condition: template
             value_template: >
               {{ send_cleared
-                 and trigger.from_state is not none and trigger.to_state is not none }}
-          - condition: template
-            value_template: >
-              {{ trigger.from_state.state == 'on' and trigger.to_state.state == 'off' }}
+                 and trigger.from_state is not none and trigger.to_state is not none
+                 and trigger.from_state.state == 'on'
+                 and trigger.to_state.state == 'off' }}
         sequence:
-          - service: notify.notify
-            target: !input notify_targets
-            data:
-              title: "Water leak cleared"
-              message: "{{ sensor_name }}{{ where_text }} is dry again."
-              data:
-                tag: "water-leak-{{ ent | slugify }}"
-                notification_icon: "mdi:water-check"
-                color: "green"
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - device_id: "{{ repeat.item }}"
+                  domain: mobile_app
+                  type: notify
+                  title: "Water leak cleared"
+                  message: "{{ sensor_name }}{{ where_text }} is dry again."
+                  data:
+                    tag: "water-leak-{{ ent | slugify }}"
+                    notification_icon: "mdi:water-check"
+                    color: "green"
 
-      # Sensor offline/unknown (optional)
+      # Sensor offline/unknown
       - conditions:
           - condition: template
             value_template: >
@@ -96,14 +101,17 @@ action:
                  and trigger.to_state is not none
                  and trigger.to_state.state in ['unavailable','unknown'] }}
         sequence:
-          - service: notify.notify
-            target: !input notify_targets
-            data:
-              title: "Leak sensor offline"
-              message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
-              data:
-                tag: "water-leak-offline-{{ ent | slugify }}"
-                notification_icon: "mdi:water-off"
-                color: "gray"
+          - repeat:
+              for_each: !input notify_devices
+              sequence:
+                - device_id: "{{ repeat.item }}"
+                  domain: mobile_app
+                  type: notify
+                  title: "Leak sensor offline"
+                  message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                  data:
+                    tag: "water-leak-offline-{{ ent | slugify }}"
+                    notification_icon: "mdi:water-off"
+                    color: "gray"
 
     default: []
