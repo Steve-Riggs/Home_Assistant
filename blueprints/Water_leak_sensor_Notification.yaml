@@ -1,6 +1,6 @@
 blueprint:
-  name: Water leak → Phone notification (device notify action)
-  description: Sends notifications to selected Mobile App devices when a moisture sensor detects water. No manual notify service names required.
+  name: Water leak → Phone notification (device picker, stable)
+  description: Notify selected Mobile App devices when a moisture sensor detects water. Uses notify.mobile_app_* derived from the selected device name.
   domain: automation
 
   input:
@@ -14,7 +14,7 @@ blueprint:
 
     notify_devices:
       name: Devices to notify
-      description: Phones/tablets from the Mobile App integration
+      description: Select phones/tablets from the Mobile App integration
       selector:
         device:
           integration: mobile_app
@@ -39,12 +39,13 @@ trigger:
     entity_id: !input water_sensors
 
 variables:
+  send_cleared: !input send_cleared
+  send_offline: !input send_offline
+
   ent: "{{ trigger.entity_id }}"
   sensor_name: "{{ state_attr(ent, 'friendly_name') or ent }}"
   area: "{{ area_name(ent) }}"
   where_text: "{{ (' in ' ~ area) if area else '' }}"
-  send_cleared: !input send_cleared
-  send_offline: !input send_offline
 
 action:
   - choose:
@@ -59,19 +60,33 @@ action:
           - repeat:
               for_each: !input notify_devices
               sequence:
-                - device_id: "{{ repeat.item }}"
-                  domain: mobile_app
-                  type: notify
-                  title: "Water leak detected!"
-                  message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
-                  data:
-                    tag: "water-leak-{{ ent | slugify }}"
-                    notification_icon: "mdi:home-flood"
-                    color: "red"
-                    ttl: 0
-                    priority: high
+                - variables:
+                    dev_name: "{{ device_attr(repeat.item, 'name') }}"
+                    svc: "mobile_app_{{ dev_name | slugify }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ services.notify[svc] is defined }}"
+                      sequence:
+                        - service: "notify.{{ svc }}"
+                          data:
+                            title: "Water leak detected!"
+                            message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
+                            data:
+                              tag: "water-leak-{{ ent | slugify }}"
+                              notification_icon: "mdi:home-flood"
+                              color: "red"
+                              ttl: 0
+                              priority: high
+                  default:
+                    - service: persistent_notification.create
+                      data:
+                        title: "Leak notification device mismatch"
+                        message: >
+                          Could not find notify service notify.{{ svc }} for device "{{ dev_name }}".
+                          Check Developer Tools → Actions for the actual notify.mobile_app_* name, or rename the Mobile App device to match.
 
-      # Leak cleared: on -> off
+      # Leak cleared: on -> off (optional)
       - conditions:
           - condition: template
             value_template: >
@@ -83,17 +98,30 @@ action:
           - repeat:
               for_each: !input notify_devices
               sequence:
-                - device_id: "{{ repeat.item }}"
-                  domain: mobile_app
-                  type: notify
-                  title: "Water leak cleared"
-                  message: "{{ sensor_name }}{{ where_text }} is dry again."
-                  data:
-                    tag: "water-leak-{{ ent | slugify }}"
-                    notification_icon: "mdi:water-check"
-                    color: "green"
+                - variables:
+                    dev_name: "{{ device_attr(repeat.item, 'name') }}"
+                    svc: "mobile_app_{{ dev_name | slugify }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ services.notify[svc] is defined }}"
+                      sequence:
+                        - service: "notify.{{ svc }}"
+                          data:
+                            title: "Water leak cleared"
+                            message: "{{ sensor_name }}{{ where_text }} is dry again."
+                            data:
+                              tag: "water-leak-{{ ent | slugify }}"
+                              notification_icon: "mdi:water-check"
+                              color: "green"
+                  default:
+                    - service: persistent_notification.create
+                      data:
+                        title: "Leak cleared device mismatch"
+                        message: >
+                          Could not find notify service notify.{{ svc }} for device "{{ dev_name }}".
 
-      # Sensor offline/unknown
+      # Sensor offline/unknown (optional)
       - conditions:
           - condition: template
             value_template: >
@@ -104,14 +132,27 @@ action:
           - repeat:
               for_each: !input notify_devices
               sequence:
-                - device_id: "{{ repeat.item }}"
-                  domain: mobile_app
-                  type: notify
-                  title: "Leak sensor offline"
-                  message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
-                  data:
-                    tag: "water-leak-offline-{{ ent | slugify }}"
-                    notification_icon: "mdi:water-off"
-                    color: "gray"
+                - variables:
+                    dev_name: "{{ device_attr(repeat.item, 'name') }}"
+                    svc: "mobile_app_{{ dev_name | slugify }}"
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "{{ services.notify[svc] is defined }}"
+                      sequence:
+                        - service: "notify.{{ svc }}"
+                          data:
+                            title: "Leak sensor offline"
+                            message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                            data:
+                              tag: "water-leak-offline-{{ ent | slugify }}"
+                              notification_icon: "mdi:water-off"
+                              color: "gray"
+                  default:
+                    - service: persistent_notification.create
+                      data:
+                        title: "Leak offline device mismatch"
+                        message: >
+                          Could not find notify service notify.{{ svc }} for device "{{ dev_name }}".
 
     default: []
