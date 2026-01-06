@@ -1,6 +1,6 @@
 blueprint:
-  name: Water leak → Phone notification (device picker, fixed)
-  description: Notify selected Mobile App devices when a moisture sensor detects water. Uses notify.mobile_app_* derived from the selected device name.
+  name: Water leak → Push + HA notification (device picker)
+  description: Sends push notifications to selected Mobile App devices and creates a Home Assistant in-app notification.
   domain: automation
 
   input:
@@ -57,6 +57,10 @@ action:
                  and trigger.from_state.state == 'off'
                  and trigger.to_state.state == 'on' }}
         sequence:
+          - service: persistent_notification.create
+            data:
+              title: "Water leak detected!"
+              message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
           - repeat:
               for_each: !input notify_devices
               sequence:
@@ -82,6 +86,10 @@ action:
                  and trigger.from_state.state == 'on'
                  and trigger.to_state.state == 'off' }}
         sequence:
+          - service: persistent_notification.create
+            data:
+              title: "Water leak cleared"
+              message: "{{ sensor_name }}{{ where_text }} is dry again."
           - repeat:
               for_each: !input notify_devices
               sequence:
@@ -104,6 +112,10 @@ action:
                  and trigger.to_state is not none
                  and trigger.to_state.state in ['unavailable','unknown'] }}
         sequence:
+          - service: persistent_notification.create
+            data:
+              title: "Leak sensor offline"
+              message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
           - repeat:
               for_each: !input notify_devices
               sequence:
