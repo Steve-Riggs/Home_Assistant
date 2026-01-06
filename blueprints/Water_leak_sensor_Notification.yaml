@@ -1,0 +1,119 @@
+blueprint:
+  name: Water leak → Phone notification (mobile_app)
+  description: Sends a phone notification when any selected water leak (moisture) sensor turns ON. Optional "cleared" and "unavailable" alerts.
+  domain: automation
+
+  input:
+    water_sensors:
+      name: Water leak sensors
+      description: Select one or more moisture sensors (water leak detectors)
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - device_class: moisture
+
+    notify_targets:
+      name: Notify targets (phones)
+      description: Select one or more mobile_app notify entities (e.g. notify.mobile_app_your_phone)
+      selector:
+        entity:
+          multiple: true
+          domain: notify
+
+    send_cleared:
+      name: Notify when cleared (sensor OFF)
+      default: true
+      selector:
+        boolean: {}
+
+    send_unavailable:
+      name: Notify when sensor becomes unavailable/unknown
+      default: true
+      selector:
+        boolean: {}
+
+mode: single
+
+trigger:
+  - platform: state
+    entity_id: !input water_sensors
+
+variables:
+  ent: "{{ trigger.entity_id }}"
+  sensor_name: "{{ state_attr(ent, 'friendly_name') or ent }}"
+  area: "{{ area_name(ent) }}"
+  where_text: "{{ (' in ' ~ area) if area else '' }}"
+
+action:
+  - choose:
+      # Leak detected: off -> on
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.from_state is not none and trigger.to_state is not none
+                 and trigger.from_state.state == 'off'
+                 and trigger.to_state.state == 'on' }}
+        sequence:
+          - repeat:
+              for_each: !input notify_targets
+              sequence:
+                - service: notify.mobile_app
+                  target:
+                    entity_id: "{{ repeat.item }}"
+                  data:
+                    title: "Water leak detected!"
+                    message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
+                    data:
+                      tag: "water-leak-{{ ent | slugify }}"
+                      notification_icon: "mdi:home-flood"
+                      color: "red"
+                      ttl: 0
+                      priority: high
+
+      # Leak cleared: on -> off (optional)
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ ( !input send_cleared )
+                 and trigger.from_state is not none and trigger.to_state is not none
+                 and trigger.from_state.state == 'on'
+                 and trigger.to_state.state == 'off' }}
+        sequence:
+          - repeat:
+              for_each: !input notify_targets
+              sequence:
+                - service: notify.mobile_app
+                  target:
+                    entity_id: "{{ repeat.item }}"
+                  data:
+                    title: "Water leak cleared"
+                    message: "{{ sensor_name }}{{ where_text }} is dry again."
+                    data:
+                      tag: "water-leak-{{ ent | slugify }}"
+                      notification_icon: "mdi:water-check"
+                      color: "green"
+
+      # Sensor unavailable/unknown (optional)
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ ( !input send_unavailable )
+                 and trigger.to_state is not none
+                 and trigger.to_state.state in ['unavailable','unknown'] }}
+        sequence:
+          - repeat:
+              for_each: !input notify_targets
+              sequence:
+                - service: notify.mobile_app
+                  target:
+                    entity_id: "{{ repeat.item }}"
+                  data:
+                    title: "Leak sensor offline"
+                    message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                    data:
+                      tag: "water-leak-offline-{{ ent | slugify }}"
+                      notification_icon: "mdi:water-off"
+                      color: "gray"
+
+    default: []
