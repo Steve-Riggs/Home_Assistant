@@ -1,6 +1,6 @@
 blueprint:
-  name: Water leak → Per-event alarm toggles + HA bell status
-  description: Choose alarm-style pushes per event type for a selected set of devices, while other devices always receive normal pushes. Also updates a single HA bell notification via notification_id.
+  name: Water leak → Per-event alarm toggles + HA bell status (UI friendly)
+  description: Device-pickers for alarm/normal targets, per-event alarm toggles, and a single HA bell notification via notification_id.
   domain: automation
 
   input:
@@ -38,6 +38,27 @@ blueprint:
       default: false
       selector:
         boolean: {}
+
+    alarm_channel:
+      name: "ALARM: Android channel"
+      description: Android notification channel name used by HA app. Common: alarm_stream
+      default: alarm_stream
+      selector:
+        text: {}
+
+    alarm_media_stream:
+      name: "ALARM: Media stream"
+      description: Android stream for sound routing.
+      default: alarm_stream_max
+      selector:
+        select:
+          options:
+            - alarm_stream_max
+            - alarm_stream
+            - music_stream
+            - ring_stream
+            - notification_stream
+            - system_stream
 
     normal_devices:
       name: Normal push devices
@@ -81,6 +102,8 @@ variables:
   alarm_on_detected: !input alarm_on_detected
   alarm_on_cleared: !input alarm_on_cleared
   alarm_on_offline: !input alarm_on_offline
+  alarm_channel: !input alarm_channel
+  alarm_media_stream: !input alarm_media_stream
 
   ent: "{{ trigger.entity_id }}"
   sensor_name: "{{ state_attr(ent, 'friendly_name') or ent }}"
@@ -89,9 +112,7 @@ variables:
 
 action:
   - choose:
-      # =========================
-      # Leak detected: off -> on
-      # =========================
+      # Leak detected
       - conditions:
           - condition: template
             value_template: >
@@ -105,7 +126,7 @@ action:
               title: "🚨 Water leak detected!"
               message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
 
-          # Alarm-capable devices: alarm OR normal based on checkbox
+          # Alarm group
           - choose:
               - conditions:
                   - condition: template
@@ -126,8 +147,8 @@ action:
                               color: "red"
                               ttl: 0
                               priority: high
-                              channel: alarm_stream
-                              media_stream: alarm_stream_max
+                              channel: "{{ alarm_channel }}"
+                              media_stream: "{{ alarm_media_stream }}"
             default:
               - repeat:
                   for_each: !input alarm_devices
@@ -143,7 +164,7 @@ action:
                           notification_icon: "mdi:home-flood"
                           color: "red"
 
-          # Normal devices: always normal
+          # Normal group (always normal)
           - repeat:
               for_each: !input normal_devices
               sequence:
@@ -158,9 +179,7 @@ action:
                       notification_icon: "mdi:home-flood"
                       color: "red"
 
-      # =========================
-      # Leak cleared: on -> off
-      # =========================
+      # Leak cleared
       - conditions:
           - condition: template
             value_template: >
@@ -195,8 +214,8 @@ action:
                               color: "green"
                               ttl: 0
                               priority: high
-                              channel: alarm_stream
-                              media_stream: alarm_stream_max
+                              channel: "{{ alarm_channel }}"
+                              media_stream: "{{ alarm_media_stream }}"
             default:
               - repeat:
                   for_each: !input alarm_devices
@@ -226,9 +245,7 @@ action:
                       notification_icon: "mdi:water-check"
                       color: "green"
 
-      # =========================
-      # Sensor offline/unknown
-      # =========================
+      # Sensor offline
       - conditions:
           - condition: template
             value_template: >
@@ -262,8 +279,8 @@ action:
                               color: "gray"
                               ttl: 0
                               priority: high
-                              channel: alarm_stream
-                              media_stream: alarm_stream_max
+                              channel: "{{ alarm_channel }}"
+                              media_stream: "{{ alarm_media_stream }}"
             default:
               - repeat:
                   for_each: !input alarm_devices
