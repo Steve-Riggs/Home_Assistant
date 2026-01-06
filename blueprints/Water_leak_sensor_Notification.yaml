@@ -1,5 +1,5 @@
 blueprint:
-  name: Water leak → Phone notification (device picker, stable)
+  name: Water leak → Phone notification (device picker, fixed)
   description: Notify selected Mobile App devices when a moisture sensor detects water. Uses notify.mobile_app_* derived from the selected device name.
   domain: automation
 
@@ -61,30 +61,17 @@ action:
               for_each: !input notify_devices
               sequence:
                 - variables:
-                    dev_name: "{{ device_attr(repeat.item, 'name') }}"
-                    svc: "mobile_app_{{ dev_name | slugify }}"
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ services.notify[svc] is defined }}"
-                      sequence:
-                        - service: "notify.{{ svc }}"
-                          data:
-                            title: "Water leak detected!"
-                            message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
-                            data:
-                              tag: "water-leak-{{ ent | slugify }}"
-                              notification_icon: "mdi:home-flood"
-                              color: "red"
-                              ttl: 0
-                              priority: high
-                  default:
-                    - service: persistent_notification.create
-                      data:
-                        title: "Leak notification device mismatch"
-                        message: >
-                          Could not find notify service notify.{{ svc }} for device "{{ dev_name }}".
-                          Check Developer Tools → Actions for the actual notify.mobile_app_* name, or rename the Mobile App device to match.
+                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                - service: "{{ svc }}"
+                  data:
+                    title: "Water leak detected!"
+                    message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
+                    data:
+                      tag: "water-leak-{{ ent | slugify }}"
+                      notification_icon: "mdi:home-flood"
+                      color: "red"
+                      ttl: 0
+                      priority: high
 
       # Leak cleared: on -> off (optional)
       - conditions:
@@ -99,27 +86,15 @@ action:
               for_each: !input notify_devices
               sequence:
                 - variables:
-                    dev_name: "{{ device_attr(repeat.item, 'name') }}"
-                    svc: "mobile_app_{{ dev_name | slugify }}"
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ services.notify[svc] is defined }}"
-                      sequence:
-                        - service: "notify.{{ svc }}"
-                          data:
-                            title: "Water leak cleared"
-                            message: "{{ sensor_name }}{{ where_text }} is dry again."
-                            data:
-                              tag: "water-leak-{{ ent | slugify }}"
-                              notification_icon: "mdi:water-check"
-                              color: "green"
-                  default:
-                    - service: persistent_notification.create
-                      data:
-                        title: "Leak cleared device mismatch"
-                        message: >
-                          Could not find notify service notify.{{ svc }} for device "{{ dev_name }}".
+                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                - service: "{{ svc }}"
+                  data:
+                    title: "Water leak cleared"
+                    message: "{{ sensor_name }}{{ where_text }} is dry again."
+                    data:
+                      tag: "water-leak-{{ ent | slugify }}"
+                      notification_icon: "mdi:water-check"
+                      color: "green"
 
       # Sensor offline/unknown (optional)
       - conditions:
@@ -133,26 +108,14 @@ action:
               for_each: !input notify_devices
               sequence:
                 - variables:
-                    dev_name: "{{ device_attr(repeat.item, 'name') }}"
-                    svc: "mobile_app_{{ dev_name | slugify }}"
-                - choose:
-                    - conditions:
-                        - condition: template
-                          value_template: "{{ services.notify[svc] is defined }}"
-                      sequence:
-                        - service: "notify.{{ svc }}"
-                          data:
-                            title: "Leak sensor offline"
-                            message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
-                            data:
-                              tag: "water-leak-offline-{{ ent | slugify }}"
-                              notification_icon: "mdi:water-off"
-                              color: "gray"
-                  default:
-                    - service: persistent_notification.create
-                      data:
-                        title: "Leak offline device mismatch"
-                        message: >
-                          Could not find notify service notify.{{ svc }} for device "{{ dev_name }}".
+                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                - service: "{{ svc }}"
+                  data:
+                    title: "Leak sensor offline"
+                    message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                    data:
+                      tag: "water-leak-offline-{{ ent | slugify }}"
+                      notification_icon: "mdi:water-off"
+                      color: "gray"
 
     default: []
