@@ -1,6 +1,6 @@
 blueprint:
-  name: Water leak → Push per-device (Alarm vs Normal) + HA bell status
-  description: Sends leak notifications to selected Mobile App devices. Choose which devices get ALARM/DND-bypass style pushes vs normal pushes. Also creates a single updating HA bell notification.
+  name: Water leak → Per-event alarm toggles + HA bell status
+  description: Choose alarm-style pushes per event type for a selected set of devices, while other devices always receive normal pushes. Also updates a single HA bell notification via notification_id.
   domain: automation
 
   input:
@@ -13,8 +13,8 @@ blueprint:
             - device_class: moisture
 
     alarm_devices:
-      name: Alarm / bypass-DND devices
-      description: Devices that should receive loud/urgent alarm-style pushes (e.g. Pixel 8)
+      name: Alarm-capable devices
+      description: Devices that *can* receive alarm-style notifications (e.g. Pixel 8)
       default: []
       selector:
         device:
@@ -23,12 +23,30 @@ blueprint:
 
     normal_devices:
       name: Normal push devices
-      description: Devices that should receive a normal push notification (e.g. tablets)
+      description: Devices that should always receive normal push (e.g. Lenovo tablet / iPad)
       default: []
       selector:
         device:
           integration: mobile_app
           multiple: true
+
+    alarm_on_detected:
+      name: Alarm on leak detected
+      default: true
+      selector:
+        boolean: {}
+
+    alarm_on_cleared:
+      name: Alarm on leak cleared
+      default: false
+      selector:
+        boolean: {}
+
+    alarm_on_offline:
+      name: Alarm on sensor offline
+      default: false
+      selector:
+        boolean: {}
 
     ha_notification_id:
       name: HA notification_id
@@ -60,6 +78,10 @@ variables:
   send_offline: !input send_offline
   ha_notification_id: !input ha_notification_id
 
+  alarm_on_detected: !input alarm_on_detected
+  alarm_on_cleared: !input alarm_on_cleared
+  alarm_on_offline: !input alarm_on_offline
+
   ent: "{{ trigger.entity_id }}"
   sensor_name: "{{ state_attr(ent, 'friendly_name') or ent }}"
   area: "{{ area_name(ent) }}"
@@ -67,7 +89,9 @@ variables:
 
 action:
   - choose:
+      # =========================
       # Leak detected: off -> on
+      # =========================
       - conditions:
           - condition: template
             value_template: >
@@ -75,33 +99,51 @@ action:
                  and trigger.from_state.state == 'off'
                  and trigger.to_state.state == 'on' }}
         sequence:
-          # HA bell notification (single updating)
           - action: persistent_notification.create
             data:
               notification_id: "{{ ha_notification_id }}"
               title: "🚨 Water leak detected!"
               message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
 
-          # ALARM devices
-          - repeat:
-              for_each: !input alarm_devices
-              sequence:
-                - variables:
-                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                - service: "{{ svc }}"
-                  data:
-                    title: "🚨 Water leak detected!"
-                    message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
-                    data:
-                      tag: "water-leak-{{ ent | slugify }}"
-                      notification_icon: "mdi:home-flood"
-                      color: "red"
-                      ttl: 0
-                      priority: high
-                      channel: alarm_stream
-                      media_stream: alarm_stream_max
+          # Alarm-capable devices: alarm OR normal based on checkbox
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_on_detected }}"
+                sequence:
+                  - repeat:
+                      for_each: !input alarm_devices
+                      sequence:
+                        - variables:
+                            svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                        - service: "{{ svc }}"
+                          data:
+                            title: "🚨 Water leak detected!"
+                            message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
+                            data:
+                              tag: "water-leak-{{ ent | slugify }}"
+                              notification_icon: "mdi:home-flood"
+                              color: "red"
+                              ttl: 0
+                              priority: high
+                              channel: alarm_stream
+                              media_stream: alarm_stream_max
+            default:
+              - repeat:
+                  for_each: !input alarm_devices
+                  sequence:
+                    - variables:
+                        svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                    - service: "{{ svc }}"
+                      data:
+                        title: "Water leak detected!"
+                        message: "{{ sensor_name }}{{ where_text }} detected moisture. Check immediately."
+                        data:
+                          tag: "water-leak-{{ ent | slugify }}"
+                          notification_icon: "mdi:home-flood"
+                          color: "red"
 
-          # NORMAL devices
+          # Normal devices: always normal
           - repeat:
               for_each: !input normal_devices
               sequence:
@@ -116,7 +158,9 @@ action:
                       notification_icon: "mdi:home-flood"
                       color: "red"
 
+      # =========================
       # Leak cleared: on -> off
+      # =========================
       - conditions:
           - condition: template
             value_template: >
@@ -131,23 +175,42 @@ action:
               title: "✅ Water leak cleared"
               message: "{{ sensor_name }}{{ where_text }} is dry again."
 
-          - repeat:
-              for_each: !input alarm_devices
-              sequence:
-                - variables:
-                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                - service: "{{ svc }}"
-                  data:
-                    title: "✅ Water leak cleared"
-                    message: "{{ sensor_name }}{{ where_text }} is dry again."
-                    data:
-                      tag: "water-leak-{{ ent | slugify }}"
-                      notification_icon: "mdi:water-check"
-                      color: "green"
-                      ttl: 0
-                      priority: high
-                      channel: alarm_stream
-                      media_stream: alarm_stream_max
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_on_cleared }}"
+                sequence:
+                  - repeat:
+                      for_each: !input alarm_devices
+                      sequence:
+                        - variables:
+                            svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                        - service: "{{ svc }}"
+                          data:
+                            title: "✅ Water leak cleared"
+                            message: "{{ sensor_name }}{{ where_text }} is dry again."
+                            data:
+                              tag: "water-leak-{{ ent | slugify }}"
+                              notification_icon: "mdi:water-check"
+                              color: "green"
+                              ttl: 0
+                              priority: high
+                              channel: alarm_stream
+                              media_stream: alarm_stream_max
+            default:
+              - repeat:
+                  for_each: !input alarm_devices
+                  sequence:
+                    - variables:
+                        svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                    - service: "{{ svc }}"
+                      data:
+                        title: "Water leak cleared"
+                        message: "{{ sensor_name }}{{ where_text }} is dry again."
+                        data:
+                          tag: "water-leak-{{ ent | slugify }}"
+                          notification_icon: "mdi:water-check"
+                          color: "green"
 
           - repeat:
               for_each: !input normal_devices
@@ -163,7 +226,9 @@ action:
                       notification_icon: "mdi:water-check"
                       color: "green"
 
+      # =========================
       # Sensor offline/unknown
+      # =========================
       - conditions:
           - condition: template
             value_template: >
@@ -177,23 +242,42 @@ action:
               title: "⚠️ Leak sensor offline"
               message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
 
-          - repeat:
-              for_each: !input alarm_devices
-              sequence:
-                - variables:
-                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
-                - service: "{{ svc }}"
-                  data:
-                    title: "⚠️ Leak sensor offline"
-                    message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
-                    data:
-                      tag: "water-leak-offline-{{ ent | slugify }}"
-                      notification_icon: "mdi:water-off"
-                      color: "gray"
-                      ttl: 0
-                      priority: high
-                      channel: alarm_stream
-                      media_stream: alarm_stream_max
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_on_offline }}"
+                sequence:
+                  - repeat:
+                      for_each: !input alarm_devices
+                      sequence:
+                        - variables:
+                            svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                        - service: "{{ svc }}"
+                          data:
+                            title: "⚠️ Leak sensor offline"
+                            message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                            data:
+                              tag: "water-leak-offline-{{ ent | slugify }}"
+                              notification_icon: "mdi:water-off"
+                              color: "gray"
+                              ttl: 0
+                              priority: high
+                              channel: alarm_stream
+                              media_stream: alarm_stream_max
+            default:
+              - repeat:
+                  for_each: !input alarm_devices
+                  sequence:
+                    - variables:
+                        svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                    - service: "{{ svc }}"
+                      data:
+                        title: "Leak sensor offline"
+                        message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                        data:
+                          tag: "water-leak-offline-{{ ent | slugify }}"
+                          notification_icon: "mdi:water-off"
+                          color: "gray"
 
           - repeat:
               for_each: !input normal_devices
