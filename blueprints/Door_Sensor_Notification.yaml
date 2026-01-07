@@ -1,6 +1,6 @@
 blueprint:
-  name: "Door sensor → Per-event alarm toggles + HA bell status (UI friendly) + Away Mode"
-  description: "Device-pickers for alarm/normal targets, per-event alarm toggles, and a single HA bell notification via notification_id. Includes Away Mode gating."
+  name: "Door sensor notifications (Away Mode + per-event alarm toggles)"
+  description: "Notify on door open/close/offline. Alarm devices can use alarm channel/stream. Normal devices always get standard push. Updates one HA bell notification using notification_id."
   domain: automation
 
   input:
@@ -15,14 +15,14 @@ blueprint:
 
     away_mode:
       name: "Away mode toggle"
-      description: "Only send notifications when this is ON (e.g. input_boolean.away_mode)."
+      description: "Only send notifications when this is ON."
       selector:
         entity:
           domain: input_boolean
 
     alarm_devices:
       name: "Alarm-capable devices"
-      description: "Devices that can receive alarm-style notifications (e.g. Pixel 8)."
+      description: "Devices that can receive alarm-style notifications."
       default: []
       selector:
         device:
@@ -49,7 +49,7 @@ blueprint:
 
     alarm_channel:
       name: "ALARM: Android channel"
-      description: "Android notification channel name used by HA app (example: alarm_stream)."
+      description: "Android notification channel name used by the Home Assistant app."
       default: "alarm_stream"
       selector:
         text: {}
@@ -70,7 +70,7 @@ blueprint:
 
     normal_devices:
       name: "Normal push devices"
-      description: "Devices that should always receive normal push (e.g. Lenovo tablet / iPad)."
+      description: "Devices that should always receive normal push."
       default: []
       selector:
         device:
@@ -85,13 +85,13 @@ blueprint:
         text: {}
 
     send_closed:
-      name: "Notify when closed (sensor OFF)"
+      name: "Notify when closed"
       default: true
       selector:
         boolean: {}
 
     send_offline:
-      name: "Notify when sensor becomes unavailable/unknown"
+      name: "Notify when sensor becomes unavailable or unknown"
       default: true
       selector:
         boolean: {}
@@ -103,8 +103,6 @@ trigger:
     entity_id: !input door_sensors
 
 variables:
-  away_mode: !input away_mode
-
   send_closed: !input send_closed
   send_offline: !input send_offline
   ha_notification_id: !input ha_notification_id
@@ -121,9 +119,9 @@ variables:
   where_text: "{{ (' in ' ~ area) if area else '' }}"
 
 action:
-  # Gate everything behind Away Mode
+  # Only run when Away Mode is ON
   - condition: state
-    entity_id: "{{ away_mode }}"
+    entity_id: !input away_mode
     state: "on"
 
   - choose:
@@ -141,7 +139,6 @@ action:
               title: "🚪 Door opened"
               message: "{{ sensor_name }}{{ where_text }} was opened."
 
-          # Alarm group
           - choose:
               - conditions:
                   - condition: template
@@ -179,7 +176,6 @@ action:
                           notification_icon: "mdi:door-open"
                           color: "orange"
 
-          # Normal group (always normal)
           - repeat:
               for_each: !input normal_devices
               sequence:
@@ -272,7 +268,7 @@ action:
             data:
               notification_id: "{{ ha_notification_id }}"
               title: "⚠️ Door sensor offline"
-              message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+              message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery and connectivity."
 
           - choose:
               - conditions:
@@ -287,7 +283,7 @@ action:
                         - service: "{{ svc }}"
                           data:
                             title: "⚠️ Door sensor offline"
-                            message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                            message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery and connectivity."
                             data:
                               tag: "door-offline-{{ ent | slugify }}"
                               notification_icon: "mdi:door"
@@ -305,7 +301,7 @@ action:
                     - service: "{{ svc }}"
                       data:
                         title: "Door sensor offline"
-                        message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                        message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery and connectivity."
                         data:
                           tag: "door-offline-{{ ent | slugify }}"
                           notification_icon: "mdi:door"
@@ -319,7 +315,7 @@ action:
                 - service: "{{ svc }}"
                   data:
                     title: "Door sensor offline"
-                    message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                    message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery and connectivity."
                     data:
                       tag: "door-offline-{{ ent | slugify }}"
                       notification_icon: "mdi:door"
