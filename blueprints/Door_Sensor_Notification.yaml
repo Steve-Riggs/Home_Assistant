@@ -1,11 +1,11 @@
 blueprint:
-  name: Door sensor → Per-event alarm toggles + HA bell status (UI friendly)
-  description: Device-pickers for alarm/normal targets, per-event alarm toggles, and a single HA bell notification via notification_id.
+  name: "Door sensor → Per-event alarm toggles + HA bell status (UI friendly) + Away Mode"
+  description: "Device-pickers for alarm/normal targets, per-event alarm toggles, and a single HA bell notification via notification_id. Includes Away Mode gating."
   domain: automation
 
   input:
     door_sensors:
-      name: Door sensors
+      name: "Door sensors"
       selector:
         entity:
           multiple: true
@@ -13,9 +13,16 @@ blueprint:
             - domain: binary_sensor
               device_class: door
 
+    away_mode:
+      name: "Away mode toggle"
+      description: "Only send notifications when this is ON (e.g. input_boolean.away_mode)."
+      selector:
+        entity:
+          domain: input_boolean
+
     alarm_devices:
-      name: Alarm-capable devices
-      description: Devices that can receive alarm-style notifications (e.g. Pixel 8)
+      name: "Alarm-capable devices"
+      description: "Devices that can receive alarm-style notifications (e.g. Pixel 8)."
       default: []
       selector:
         device:
@@ -42,28 +49,28 @@ blueprint:
 
     alarm_channel:
       name: "ALARM: Android channel"
-      description: Android notification channel name used by HA app. Common: alarm_stream
-      default: alarm_stream
+      description: "Android notification channel name used by HA app (example: alarm_stream)."
+      default: "alarm_stream"
       selector:
         text: {}
 
     alarm_media_stream:
       name: "ALARM: Media stream"
-      description: Android stream for sound routing.
-      default: alarm_stream_max
+      description: "Android stream for sound routing."
+      default: "alarm_stream_max"
       selector:
         select:
           options:
-            - alarm_stream_max
-            - alarm_stream
-            - music_stream
-            - ring_stream
-            - notification_stream
-            - system_stream
+            - "alarm_stream_max"
+            - "alarm_stream"
+            - "music_stream"
+            - "ring_stream"
+            - "notification_stream"
+            - "system_stream"
 
     normal_devices:
-      name: Normal push devices
-      description: Devices that should always receive normal push (e.g. Lenovo tablet / iPad)
+      name: "Normal push devices"
+      description: "Devices that should always receive normal push (e.g. Lenovo tablet / iPad)."
       default: []
       selector:
         device:
@@ -71,20 +78,20 @@ blueprint:
           multiple: true
 
     ha_notification_id:
-      name: HA notification_id
-      description: Updates the same HA bell notification instead of stacking.
-      default: door_sensor_status
+      name: "HA notification_id"
+      description: "Updates the same HA bell notification instead of stacking."
+      default: "door_sensor_status"
       selector:
         text: {}
 
     send_closed:
-      name: Notify when closed (sensor OFF)
+      name: "Notify when closed (sensor OFF)"
       default: true
       selector:
         boolean: {}
 
     send_offline:
-      name: Notify when sensor becomes unavailable/unknown
+      name: "Notify when sensor becomes unavailable/unknown"
       default: true
       selector:
         boolean: {}
@@ -96,6 +103,8 @@ trigger:
     entity_id: !input door_sensors
 
 variables:
+  away_mode: !input away_mode
+
   send_closed: !input send_closed
   send_offline: !input send_offline
   ha_notification_id: !input ha_notification_id
@@ -112,6 +121,11 @@ variables:
   where_text: "{{ (' in ' ~ area) if area else '' }}"
 
 action:
+  # Gate everything behind Away Mode
+  - condition: state
+    entity_id: "{{ away_mode }}"
+    state: "on"
+
   - choose:
       # Door opened (off -> on)
       - conditions:
@@ -121,7 +135,7 @@ action:
                  and trigger.from_state.state == 'off'
                  and trigger.to_state.state == 'on' }}
         sequence:
-          - action: persistent_notification.create
+          - service: persistent_notification.create
             data:
               notification_id: "{{ ha_notification_id }}"
               title: "🚪 Door opened"
@@ -189,7 +203,7 @@ action:
                  and trigger.from_state.state == 'on'
                  and trigger.to_state.state == 'off' }}
         sequence:
-          - action: persistent_notification.create
+          - service: persistent_notification.create
             data:
               notification_id: "{{ ha_notification_id }}"
               title: "✅ Door closed"
@@ -254,7 +268,7 @@ action:
                  and trigger.to_state is not none
                  and trigger.to_state.state in ['unavailable','unknown'] }}
         sequence:
-          - action: persistent_notification.create
+          - service: persistent_notification.create
             data:
               notification_id: "{{ ha_notification_id }}"
               title: "⚠️ Door sensor offline"
