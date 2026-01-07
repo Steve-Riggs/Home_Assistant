@@ -1,0 +1,314 @@
+blueprint:
+  name: Door sensor → Per-event alarm toggles + HA bell status (UI friendly)
+  description: Device-pickers for alarm/normal targets, per-event alarm toggles, and a single HA bell notification via notification_id.
+  domain: automation
+
+  input:
+    door_sensors:
+      name: Door sensors
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: binary_sensor
+              device_class: door
+
+    alarm_devices:
+      name: Alarm-capable devices
+      description: Devices that can receive alarm-style notifications (e.g. Pixel 8)
+      default: []
+      selector:
+        device:
+          integration: mobile_app
+          multiple: true
+
+    alarm_on_opened:
+      name: "ALARM: Door opened"
+      default: true
+      selector:
+        boolean: {}
+
+    alarm_on_closed:
+      name: "ALARM: Door closed"
+      default: false
+      selector:
+        boolean: {}
+
+    alarm_on_offline:
+      name: "ALARM: Sensor offline"
+      default: false
+      selector:
+        boolean: {}
+
+    alarm_channel:
+      name: "ALARM: Android channel"
+      description: Android notification channel name used by HA app. Common: alarm_stream
+      default: alarm_stream
+      selector:
+        text: {}
+
+    alarm_media_stream:
+      name: "ALARM: Media stream"
+      description: Android stream for sound routing.
+      default: alarm_stream_max
+      selector:
+        select:
+          options:
+            - alarm_stream_max
+            - alarm_stream
+            - music_stream
+            - ring_stream
+            - notification_stream
+            - system_stream
+
+    normal_devices:
+      name: Normal push devices
+      description: Devices that should always receive normal push (e.g. Lenovo tablet / iPad)
+      default: []
+      selector:
+        device:
+          integration: mobile_app
+          multiple: true
+
+    ha_notification_id:
+      name: HA notification_id
+      description: Updates the same HA bell notification instead of stacking.
+      default: door_sensor_status
+      selector:
+        text: {}
+
+    send_closed:
+      name: Notify when closed (sensor OFF)
+      default: true
+      selector:
+        boolean: {}
+
+    send_offline:
+      name: Notify when sensor becomes unavailable/unknown
+      default: true
+      selector:
+        boolean: {}
+
+mode: single
+
+trigger:
+  - platform: state
+    entity_id: !input door_sensors
+
+variables:
+  send_closed: !input send_closed
+  send_offline: !input send_offline
+  ha_notification_id: !input ha_notification_id
+
+  alarm_on_opened: !input alarm_on_opened
+  alarm_on_closed: !input alarm_on_closed
+  alarm_on_offline: !input alarm_on_offline
+  alarm_channel: !input alarm_channel
+  alarm_media_stream: !input alarm_media_stream
+
+  ent: "{{ trigger.entity_id }}"
+  sensor_name: "{{ state_attr(ent, 'friendly_name') or ent }}"
+  area: "{{ area_name(ent) }}"
+  where_text: "{{ (' in ' ~ area) if area else '' }}"
+
+action:
+  - choose:
+      # Door opened (off -> on)
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.from_state is not none and trigger.to_state is not none
+                 and trigger.from_state.state == 'off'
+                 and trigger.to_state.state == 'on' }}
+        sequence:
+          - action: persistent_notification.create
+            data:
+              notification_id: "{{ ha_notification_id }}"
+              title: "🚪 Door opened"
+              message: "{{ sensor_name }}{{ where_text }} was opened."
+
+          # Alarm group
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_on_opened }}"
+                sequence:
+                  - repeat:
+                      for_each: !input alarm_devices
+                      sequence:
+                        - variables:
+                            svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                        - service: "{{ svc }}"
+                          data:
+                            title: "🚪 Door opened"
+                            message: "{{ sensor_name }}{{ where_text }} was opened."
+                            data:
+                              tag: "door-opened-{{ ent | slugify }}"
+                              notification_icon: "mdi:door-open"
+                              color: "orange"
+                              ttl: 0
+                              priority: high
+                              channel: "{{ alarm_channel }}"
+                              media_stream: "{{ alarm_media_stream }}"
+            default:
+              - repeat:
+                  for_each: !input alarm_devices
+                  sequence:
+                    - variables:
+                        svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                    - service: "{{ svc }}"
+                      data:
+                        title: "Door opened"
+                        message: "{{ sensor_name }}{{ where_text }} was opened."
+                        data:
+                          tag: "door-opened-{{ ent | slugify }}"
+                          notification_icon: "mdi:door-open"
+                          color: "orange"
+
+          # Normal group (always normal)
+          - repeat:
+              for_each: !input normal_devices
+              sequence:
+                - variables:
+                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                - service: "{{ svc }}"
+                  data:
+                    title: "Door opened"
+                    message: "{{ sensor_name }}{{ where_text }} was opened."
+                    data:
+                      tag: "door-opened-{{ ent | slugify }}"
+                      notification_icon: "mdi:door-open"
+                      color: "orange"
+
+      # Door closed (on -> off)
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ send_closed
+                 and trigger.from_state is not none and trigger.to_state is not none
+                 and trigger.from_state.state == 'on'
+                 and trigger.to_state.state == 'off' }}
+        sequence:
+          - action: persistent_notification.create
+            data:
+              notification_id: "{{ ha_notification_id }}"
+              title: "✅ Door closed"
+              message: "{{ sensor_name }}{{ where_text }} was closed."
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_on_closed }}"
+                sequence:
+                  - repeat:
+                      for_each: !input alarm_devices
+                      sequence:
+                        - variables:
+                            svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                        - service: "{{ svc }}"
+                          data:
+                            title: "✅ Door closed"
+                            message: "{{ sensor_name }}{{ where_text }} was closed."
+                            data:
+                              tag: "door-closed-{{ ent | slugify }}"
+                              notification_icon: "mdi:door-closed"
+                              color: "green"
+                              ttl: 0
+                              priority: high
+                              channel: "{{ alarm_channel }}"
+                              media_stream: "{{ alarm_media_stream }}"
+            default:
+              - repeat:
+                  for_each: !input alarm_devices
+                  sequence:
+                    - variables:
+                        svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                    - service: "{{ svc }}"
+                      data:
+                        title: "Door closed"
+                        message: "{{ sensor_name }}{{ where_text }} was closed."
+                        data:
+                          tag: "door-closed-{{ ent | slugify }}"
+                          notification_icon: "mdi:door-closed"
+                          color: "green"
+
+          - repeat:
+              for_each: !input normal_devices
+              sequence:
+                - variables:
+                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                - service: "{{ svc }}"
+                  data:
+                    title: "Door closed"
+                    message: "{{ sensor_name }}{{ where_text }} was closed."
+                    data:
+                      tag: "door-closed-{{ ent | slugify }}"
+                      notification_icon: "mdi:door-closed"
+                      color: "green"
+
+      # Sensor offline
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ send_offline
+                 and trigger.to_state is not none
+                 and trigger.to_state.state in ['unavailable','unknown'] }}
+        sequence:
+          - action: persistent_notification.create
+            data:
+              notification_id: "{{ ha_notification_id }}"
+              title: "⚠️ Door sensor offline"
+              message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+
+          - choose:
+              - conditions:
+                  - condition: template
+                    value_template: "{{ alarm_on_offline }}"
+                sequence:
+                  - repeat:
+                      for_each: !input alarm_devices
+                      sequence:
+                        - variables:
+                            svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                        - service: "{{ svc }}"
+                          data:
+                            title: "⚠️ Door sensor offline"
+                            message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                            data:
+                              tag: "door-offline-{{ ent | slugify }}"
+                              notification_icon: "mdi:door"
+                              color: "gray"
+                              ttl: 0
+                              priority: high
+                              channel: "{{ alarm_channel }}"
+                              media_stream: "{{ alarm_media_stream }}"
+            default:
+              - repeat:
+                  for_each: !input alarm_devices
+                  sequence:
+                    - variables:
+                        svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                    - service: "{{ svc }}"
+                      data:
+                        title: "Door sensor offline"
+                        message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                        data:
+                          tag: "door-offline-{{ ent | slugify }}"
+                          notification_icon: "mdi:door"
+                          color: "gray"
+
+          - repeat:
+              for_each: !input normal_devices
+              sequence:
+                - variables:
+                    svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+                - service: "{{ svc }}"
+                  data:
+                    title: "Door sensor offline"
+                    message: "{{ sensor_name }}{{ where_text }} became {{ trigger.to_state.state }}. Check battery / Zigbee / connectivity."
+                    data:
+                      tag: "door-offline-{{ ent | slugify }}"
+                      notification_icon: "mdi:door"
+                      color: "gray"
+
+    default: []
