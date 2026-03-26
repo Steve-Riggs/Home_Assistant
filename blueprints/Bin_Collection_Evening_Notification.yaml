@@ -3,15 +3,20 @@ blueprint:
   description: >
     Sends a push notification the evening before waste collection,
     listing the bins that will be collected the next morning.
+
+    Supports:
+    - multiple waste calendars
+    - multiple Home Assistant Mobile App devices
   domain: automation
   input:
-    waste_calendar:
-      name: "Waste calendar"
-      description: "The calendar entity created by Waste Collection Schedule"
+    waste_calendars:
+      name: "Waste calendars"
+      description: "Choose one or more waste collection calendars"
       selector:
         entity:
+          multiple: true
           filter:
-            domain: calendar
+            - domain: calendar
 
     reminder_time:
       name: "Reminder time"
@@ -20,25 +25,19 @@ blueprint:
       selector:
         time: {}
 
-    notify_service_1:
-      name: "Notify service 1"
-      description: "Example: notify.mobile_app_steves_phone"
+    notify_devices:
+      name: "Devices to notify"
+      description: "Choose one or more Home Assistant Mobile App devices"
       selector:
-        text: {}
-
-    notify_service_2:
-      name: "Notify service 2 (optional)"
-      description: "Example: notify.mobile_app_megs_phone"
-      default: ""
-      selector:
-        text: {}
+        device:
+          multiple: true
+          filter:
+            - integration: mobile_app
 
 mode: single
 
 variables:
-  waste_calendar: !input waste_calendar
-  notify_service_1: !input notify_service_1
-  notify_service_2: !input notify_service_2
+  waste_calendars: !input waste_calendars
 
 triggers:
   - trigger: time
@@ -47,7 +46,7 @@ triggers:
 actions:
   - action: calendar.get_events
     target:
-      entity_id: !input waste_calendar
+      entity_id: !input waste_calendars
     data:
       start_date_time: "{{ today_at('00:00:00') + timedelta(days=1) }}"
       end_date_time: "{{ today_at('00:00:00') + timedelta(days=2) }}"
@@ -55,15 +54,20 @@ actions:
 
   - variables:
       tomorrow_bins: >-
-        {{
-          bin_events[waste_calendar].events
-          | map(attribute='summary')
-          | list
-        }}
+        {% set ns = namespace(items=[]) %}
+        {% for cal in waste_calendars %}
+          {% set ns.items = ns.items + (
+            bin_events[cal].events
+            | default([])
+            | map(attribute='summary')
+            | list
+          ) %}
+        {% endfor %}
+        {{ ns.items | unique | list }}
       bin_count: "{{ tomorrow_bins | count }}"
       bin_list: "{{ tomorrow_bins | join(', ') }}"
       notify_message: >-
-        {% if bin_count == 1 %}
+        {% if bin_count | int == 1 %}
           Put out the {{ bin_list }} tonight — collection is tomorrow morning.
         {% else %}
           Put out these bins tonight — collection is tomorrow morning: {{ bin_list }}.
@@ -72,20 +76,27 @@ actions:
   - condition: template
     value_template: "{{ bin_count | int > 0 }}"
 
-  - if:
-      - condition: template
-        value_template: "{{ notify_service_1 | trim != '' }}"
-    then:
-      - action: "{{ notify_service_1 }}"
-        data:
-          title: "Bin reminder"
-          message: "{{ notify_message }}"
-
-  - if:
-      - condition: template
-        value_template: "{{ notify_service_2 | trim != '' }}"
-    then:
-      - action: "{{ notify_service_2 }}"
-        data:
-          title: "Bin reminder"
-          message: "{{ notify_message }}"
+  - repeat:
+      for_each: !input notify_devices
+      sequence:
+        - variables:
+            tracker_entity: >-
+              {{
+                (
+                  device_entities(repeat.item)
+                  | select('match', '^device_tracker\\.')
+                  | list
+                  | first
+                ) | default('', true)
+              }}
+            notify_service: >-
+              {% if tracker_entity != '' %}
+                notify.mobile_app_{{ tracker_entity.split('.')[1] }}
+              {% else %}
+                notify.mobile_app_{{ device_name(repeat.item) | slugify }}
+              {% endif %}
+        - continue_on_error: true
+          action: "{{ notify_service }}"
+          data:
+            title: "Bin reminder"
+            message: "{{ notify_message }}"
