@@ -8,6 +8,7 @@ blueprint:
     - multiple waste calendars
     - multiple Home Assistant Mobile App devices
   domain: automation
+
   input:
     waste_calendars:
       name: "Waste calendars"
@@ -28,23 +29,31 @@ blueprint:
     notify_devices:
       name: "Devices to notify"
       description: "Choose one or more Home Assistant Mobile App devices"
+      default: []
       selector:
         device:
+          integration: mobile_app
           multiple: true
-          filter:
-            - integration: mobile_app
+
+    ha_notification_id:
+      name: "HA notification_id"
+      description: "Updates the same HA bell notification instead of stacking"
+      default: "waste_collection_reminder"
+      selector:
+        text: {}
 
 mode: single
 
 variables:
   waste_calendars: !input waste_calendars
+  ha_notification_id: !input ha_notification_id
 
-triggers:
-  - trigger: time
+trigger:
+  - platform: time
     at: !input reminder_time
 
-actions:
-  - action: calendar.get_events
+action:
+  - service: calendar.get_events
     target:
       entity_id: !input waste_calendars
     data:
@@ -76,27 +85,23 @@ actions:
   - condition: template
     value_template: "{{ bin_count | int > 0 }}"
 
+  - service: persistent_notification.create
+    data:
+      notification_id: "{{ ha_notification_id }}"
+      title: "Bin reminder"
+      message: "{{ notify_message }}"
+
   - repeat:
       for_each: !input notify_devices
       sequence:
         - variables:
-            tracker_entity: >-
-              {{
-                (
-                  device_entities(repeat.item)
-                  | select('match', '^device_tracker\\.')
-                  | list
-                  | first
-                ) | default('', true)
-              }}
-            notify_service: >-
-              {% if tracker_entity != '' %}
-                notify.mobile_app_{{ tracker_entity.split('.')[1] }}
-              {% else %}
-                notify.mobile_app_{{ device_name(repeat.item) | slugify }}
-              {% endif %}
-        - continue_on_error: true
-          action: "{{ notify_service }}"
+            svc: "notify.mobile_app_{{ device_attr(repeat.item, 'name') | slugify }}"
+        - service: "{{ svc }}"
+          continue_on_error: true
           data:
             title: "Bin reminder"
             message: "{{ notify_message }}"
+            data:
+              tag: "waste-collection-reminder"
+              notification_icon: "mdi:trash-can-outline"
+              color: "green"
