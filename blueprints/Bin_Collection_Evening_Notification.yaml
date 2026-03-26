@@ -1,0 +1,49 @@
+alias: Bin Collection Reminder - Night Before
+description: Sends a push notification the evening before bin collection
+mode: single
+
+triggers:
+  - trigger: time
+    at: "19:00:00"   # change this to whatever time you want the night before
+
+actions:
+  - action: calendar.get_events
+    target:
+      entity_id: calendar.waste_collection_schedule   # replace with your bin calendar entity
+    data:
+      start_date_time: "{{ today_at('00:00:00') + timedelta(days=1) }}"
+      end_date_time: "{{ today_at('00:00:00') + timedelta(days=2) }}"
+    response_variable: bin_events
+
+  - variables:
+      tomorrow_bins: >-
+        {{
+          bin_events['calendar.waste_collection_schedule'].events
+          | map(attribute='summary')
+          | list
+        }}
+      bin_count: "{{ tomorrow_bins | count }}"
+      bin_list: "{{ tomorrow_bins | join(', ') }}"
+
+  - condition: template
+    value_template: "{{ bin_count > 0 }}"
+
+  - parallel:
+      - action: notify.mobile_app_steves_phone
+        data:
+          title: "Bin reminder"
+          message: >-
+            {% if bin_count == 1 %}
+              Put out the {{ bin_list }} tonight — collection is tomorrow morning.
+            {% else %}
+              Put out these bins tonight — collection is tomorrow morning: {{ bin_list }}.
+            {% endif %}
+      - action: notify.mobile_app_megs_phone
+        data:
+          title: "Bin reminder"
+          message: >-
+            {% if bin_count == 1 %}
+              Put out the {{ bin_list }} tonight — collection is tomorrow morning.
+            {% else %}
+              Put out these bins tonight — collection is tomorrow morning: {{ bin_list }}.
+            {% endif %}
