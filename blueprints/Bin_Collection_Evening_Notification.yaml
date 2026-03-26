@@ -1,34 +1,34 @@
 blueprint:
-  name: Waste Collection Reminder - Night Before
+  name: "Waste Collection Reminder - Night Before"
   description: >
     Sends a push notification the evening before waste collection,
     listing the bins that will be collected the next morning.
   domain: automation
   input:
     waste_calendar:
-      name: Waste calendar
-      description: The calendar entity created by Waste Collection Schedule
+      name: "Waste calendar"
+      description: "The calendar entity created by Waste Collection Schedule"
       selector:
         entity:
           filter:
             domain: calendar
 
     reminder_time:
-      name: Reminder time
-      description: Time to send the reminder the evening before collection
+      name: "Reminder time"
+      description: "Time to send the reminder the evening before collection"
       default: "19:00:00"
       selector:
         time: {}
 
     notify_service_1:
-      name: Notify service 1
-      description: Example: notify.mobile_app_steves_phone
+      name: "Notify service 1"
+      description: "Example: notify.mobile_app_steves_phone"
       selector:
         text: {}
 
     notify_service_2:
-      name: Notify service 2 (optional)
-      description: Example: notify.mobile_app_megs_phone
+      name: "Notify service 2 (optional)"
+      description: "Example: notify.mobile_app_megs_phone"
       default: ""
       selector:
         text: {}
