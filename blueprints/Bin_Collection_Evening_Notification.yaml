@@ -1,15 +1,53 @@
-alias: Bin Collection Reminder - Night Before
-description: Sends a push notification the evening before bin collection
+blueprint:
+  name: Waste Collection Reminder - Night Before
+  description: >
+    Sends a push notification the evening before waste collection,
+    listing the bins that will be collected the next morning.
+  domain: automation
+  input:
+    waste_calendar:
+      name: Waste calendar
+      description: The calendar entity created by Waste Collection Schedule
+      selector:
+        entity:
+          filter:
+            domain: calendar
+
+    reminder_time:
+      name: Reminder time
+      description: Time to send the reminder the evening before collection
+      default: "19:00:00"
+      selector:
+        time: {}
+
+    notify_service_1:
+      name: Notify service 1
+      description: Example: notify.mobile_app_steves_phone
+      selector:
+        text: {}
+
+    notify_service_2:
+      name: Notify service 2 (optional)
+      description: Example: notify.mobile_app_megs_phone
+      default: ""
+      selector:
+        text: {}
+
 mode: single
+
+variables:
+  waste_calendar: !input waste_calendar
+  notify_service_1: !input notify_service_1
+  notify_service_2: !input notify_service_2
 
 triggers:
   - trigger: time
-    at: "19:00:00"   # change this to whatever time you want the night before
+    at: !input reminder_time
 
 actions:
   - action: calendar.get_events
     target:
-      entity_id: calendar.waste_collection_schedule   # replace with your bin calendar entity
+      entity_id: !input waste_calendar
     data:
       start_date_time: "{{ today_at('00:00:00') + timedelta(days=1) }}"
       end_date_time: "{{ today_at('00:00:00') + timedelta(days=2) }}"
@@ -18,32 +56,36 @@ actions:
   - variables:
       tomorrow_bins: >-
         {{
-          bin_events['calendar.waste_collection_schedule'].events
+          bin_events[waste_calendar].events
           | map(attribute='summary')
           | list
         }}
       bin_count: "{{ tomorrow_bins | count }}"
       bin_list: "{{ tomorrow_bins | join(', ') }}"
+      notify_message: >-
+        {% if bin_count == 1 %}
+          Put out the {{ bin_list }} tonight — collection is tomorrow morning.
+        {% else %}
+          Put out these bins tonight — collection is tomorrow morning: {{ bin_list }}.
+        {% endif %}
 
   - condition: template
-    value_template: "{{ bin_count > 0 }}"
+    value_template: "{{ bin_count | int > 0 }}"
 
-  - parallel:
-      - action: notify.mobile_app_steves_phone
+  - if:
+      - condition: template
+        value_template: "{{ notify_service_1 | trim != '' }}"
+    then:
+      - action: "{{ notify_service_1 }}"
         data:
           title: "Bin reminder"
-          message: >-
-            {% if bin_count == 1 %}
-              Put out the {{ bin_list }} tonight — collection is tomorrow morning.
-            {% else %}
-              Put out these bins tonight — collection is tomorrow morning: {{ bin_list }}.
-            {% endif %}
-      - action: notify.mobile_app_megs_phone
+          message: "{{ notify_message }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ notify_service_2 | trim != '' }}"
+    then:
+      - action: "{{ notify_service_2 }}"
         data:
           title: "Bin reminder"
-          message: >-
-            {% if bin_count == 1 %}
-              Put out the {{ bin_list }} tonight — collection is tomorrow morning.
-            {% else %}
-              Put out these bins tonight — collection is tomorrow morning: {{ bin_list }}.
-            {% endif %}
+          message: "{{ notify_message }}"
