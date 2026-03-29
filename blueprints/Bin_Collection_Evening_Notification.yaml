@@ -3,10 +3,6 @@ blueprint:
   description: >
     Sends a push notification the evening before waste collection,
     listing the bins that will be collected the next morning.
-
-    Supports:
-    - multiple waste calendars
-    - multiple Home Assistant Mobile App devices
   domain: automation
 
   input:
@@ -62,15 +58,16 @@ action:
     response_variable: bin_events
 
   - variables:
+      tomorrow_date: "{{ (now() + timedelta(days=1)).strftime('%Y-%m-%d') }}"
       tomorrow_bins: >-
         {% set ns = namespace(items=[]) %}
         {% for cal in waste_calendars %}
-          {% set ns.items = ns.items + (
-            bin_events[cal].events
-            | default([])
-            | map(attribute='summary')
-            | list
-          ) %}
+          {% for event in bin_events[cal].events | default([]) %}
+            {% set start_day = (event.start | string)[:10] %}
+            {% if start_day == tomorrow_date %}
+              {% set ns.items = ns.items + [event.summary] %}
+            {% endif %}
+          {% endfor %}
         {% endfor %}
         {{ ns.items | unique | list }}
       bin_count: "{{ tomorrow_bins | count }}"
