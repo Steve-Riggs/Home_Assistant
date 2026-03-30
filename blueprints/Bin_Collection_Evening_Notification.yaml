@@ -97,9 +97,29 @@ action:
         - service: "{{ svc }}"
           continue_on_error: true
           data:
-            title: "Bin reminder"
-            message: "{{ notify_message }}"
+            title: "🗑️ Bin night"
+            message: >-
+              {% if bin_count | int == 1 %}
+                Put out {{ bin_list }} tonight.
+
+                Collection is tomorrow morning.
+              {% else %}
+                Put out these bins tonight:
+
+                {{ bin_list }}
+
+                Collection is tomorrow morning.
+              {% endif %}
             data:
+              subtitle: "Tomorrow morning collection"
+              subject: "Tomorrow morning collection"
               tag: "waste-collection-reminder"
+              group: "home-reminders"
               notification_icon: "mdi:trash-can-outline"
-              color: "green"
+              color: "#43A047"
+              url: "/calendar"
+              clickAction: "/calendar"
+              actions:
+                - action: "URI"
+                  title: "Open Calendar"
+                  uri: "/calendar"
